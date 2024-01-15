@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using System.Collections;
 
 public class HollowKnightController : MonoBehaviour
 {
@@ -7,57 +8,52 @@ public class HollowKnightController : MonoBehaviour
     private Collider2D coll;
 
     private bool isGrounded;
-    private bool canDoubleJump;
+    private bool isDashing = false;
+    private bool isJumping = false;
 
     public LayerMask groundLayer;
 
-    public Animator animator; // Reference to the Animator component
-    public Text characterStateText; // Reference to the UI Text element
+    public Animator animator;
+    public Text characterStateText;
 
     public float moveSpeed = 5f;
     public float jumpForce = 12f;
-    public float doubleJumpForce = 9f;
+    public float dashForce = 20f;
+    public float dashDuration = 0.2f;
+    public float dashCooldown = 1f;
+    public float maxJumpTime = 0.5f; // Adjust this value for maximum jump duration
+
+    private float jumpTime = 0f;
 
     private void Start()
     {
         rb = GetComponent<Rigidbody2D>();
         coll = GetComponent<Collider2D>();
-        animator = GetComponent<Animator>(); // Assuming the Animator is on the same GameObject
-
-        // Find any Text component in the scene
+        animator = GetComponent<Animator>();
         characterStateText = FindObjectOfType<Text>();
-
-        // Optional: Set the initial animation state
         SetAnimationState("Idle");
     }
 
     private void Update()
     {
-        // Check if the character is grounded
         isGrounded = Physics2D.IsTouchingLayers(coll, groundLayer);
 
-        // Player Input
         float horizontalInput = Input.GetAxis("Horizontal");
         bool jumpInput = Input.GetButtonDown("Jump");
+        bool dashInput = Input.GetKey(KeyCode.LeftShift);
 
-        // Handle Movement
         HandleMovement(horizontalInput);
-
-        // Handle Jumping
         HandleJump(jumpInput);
-
-        // Update Animator
+        HandleDash(dashInput);
         UpdateAnimator(horizontalInput);
-
-        // Update UI Text
         UpdateCharacterStateText();
     }
 
     private void HandleMovement(float horizontalInput)
     {
-        rb.velocity = new Vector2(horizontalInput * moveSpeed, rb.velocity.y);
+        if (!isDashing)
+            rb.velocity = new Vector2(horizontalInput * moveSpeed, rb.velocity.y);
 
-        // Flip the character sprite based on movement direction
         if (horizontalInput > 0)
             transform.localScale = new Vector3(1, 1, 1);
         else if (horizontalInput < 0)
@@ -66,21 +62,53 @@ public class HollowKnightController : MonoBehaviour
 
     private void HandleJump(bool jumpInput)
     {
-        if (jumpInput)
+        if (jumpInput && isGrounded)
         {
-            if (isGrounded)
-            {
-                // Regular jump
-                rb.velocity = new Vector2(rb.velocity.x, jumpForce);
-                canDoubleJump = true;
-            }
-            else if (canDoubleJump)
-            {
-                // Double jump
-                rb.velocity = new Vector2(rb.velocity.x, doubleJumpForce);
-                canDoubleJump = false;
-            }
+            StartCoroutine(Jump());
         }
+    }
+
+    private IEnumerator Jump()
+    {
+        isJumping = true;
+        jumpTime = 0f;
+
+        while (Input.GetButton("Jump") && jumpTime < maxJumpTime && isGrounded)
+        {
+            float jumpMultiplier = Mathf.Lerp(1f, 0.5f, jumpTime / maxJumpTime); // Adjust the second parameter for the desired jump height
+            rb.velocity = new Vector2(rb.velocity.x, jumpForce * jumpMultiplier);
+            jumpTime += Time.deltaTime;
+            yield return null;
+        }
+
+        isJumping = false;
+    }
+
+    private void HandleDash(bool dashInput)
+    {
+        if (dashInput && !isDashing && isGrounded)
+        {
+            StartCoroutine(Dash());
+        }
+    }
+
+    private IEnumerator Dash()
+    {
+        isDashing = true;
+
+        while (Input.GetKey(KeyCode.LeftShift) && isGrounded)
+        {
+            rb.velocity = new Vector2(transform.localScale.x * dashForce, rb.velocity.y);
+            yield return null;
+        }
+
+        isDashing = false;
+        StartCoroutine(DashCooldown());
+    }
+
+    private IEnumerator DashCooldown()
+    {
+        yield return new WaitForSeconds(dashCooldown);
     }
 
     private void UpdateAnimator(float horizontalInput)
@@ -88,8 +116,8 @@ public class HollowKnightController : MonoBehaviour
         float speed = Mathf.Abs(horizontalInput);
         animator.SetFloat("Speed", speed);
         animator.SetBool("IsGrounded", isGrounded);
-
-        // Additional logic for transitioning between animations if needed
+        animator.SetBool("IsDashing", isDashing);
+        animator.SetBool("IsJumping", isJumping);
     }
 
     private void UpdateCharacterStateText()
@@ -98,10 +126,9 @@ public class HollowKnightController : MonoBehaviour
 
         if (characterStateText != null)
         {
-            characterStateText.text = $"Grounded: {isGrounded}, Speed: {Mathf.Abs(rb.velocity.x)}, FPS: {fps:F2}";
+            characterStateText.text = $"Grounded: {isGrounded}, Speed: {Mathf.Abs(rb.velocity.x)}, FPS: {fps:F2}, Jump Time: {jumpTime:F2}";
 
-            // Check for frame drops (optional)
-            if (Time.deltaTime > 0.02f) // Adjust the threshold as needed
+            if (Time.deltaTime > 0.02f)
             {
                 characterStateText.text += "\nFrame Drop Detected!";
             }
@@ -110,7 +137,6 @@ public class HollowKnightController : MonoBehaviour
 
     private void SetAnimationState(string state)
     {
-        // Trigger the specified animation state
         animator.SetTrigger(state);
     }
 }
